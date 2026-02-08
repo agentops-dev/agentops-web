@@ -5,7 +5,7 @@ import { handleBridgeEvent } from '../bridge/events';
 import { verifyBridgeRequest } from '../bridge/validator';
 import { waitForApprovalDecision } from '../approvals/waiter';
 import { createApproval, getApproval } from '../supabase/approvals';
-import { getRun } from '../supabase/runs';
+import { ensureRunExists, getRun } from '../supabase/runs';
 import { getDeviceById, getWorkspaceById } from '../supabase/workspaces';
 import { sendPushNotification } from '../push';
 
@@ -62,26 +62,32 @@ router.post('/event', async (req, res) => {
     return res.status(400).json({ error: 'Invalid event_ts timestamp' });
   }
 
-  const auth = await verifyBridgeRequest({
-    headers: req.headers,
-    body: req.body,
-    workspaceId: parsed.data.workspace_id,
-  });
+  try {
+    const auth = await verifyBridgeRequest({
+      headers: req.headers,
+      body: req.body,
+      workspaceId: parsed.data.workspace_id,
+    });
 
-  if (!auth.ok) {
-    return res.status(401).json({ error: auth.error });
+    if (!auth.ok) {
+      return res.status(401).json({ error: auth.error });
+    }
+
+    await handleBridgeEvent({
+      workspaceId: parsed.data.workspace_id,
+      runId: parsed.data.run_id,
+      provider: parsed.data.provider,
+      eventType: parsed.data.event_type,
+      eventTs: parsed.data.event_ts,
+      payload: parsed.data.payload,
+    });
+
+    return res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Bridge event failed', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ error: 'Internal server error', details: message });
   }
-
-  await handleBridgeEvent({
-    workspaceId: parsed.data.workspace_id,
-    runId: parsed.data.run_id,
-    provider: parsed.data.provider,
-    eventType: parsed.data.event_type,
-    eventTs: parsed.data.event_ts,
-    payload: parsed.data.payload,
-  });
-
-  return res.json({ status: 'ok' });
 });
 
 router.post('/approval/request', async (req, res) => {
@@ -93,91 +99,119 @@ router.post('/approval/request', async (req, res) => {
     });
   }
 
-  const contextWorkspaceId = extractWorkspaceIdFromContext(parsed.data.context);
-  const run = await getRun(parsed.data.run_id);
-  const workspaceId =
-    parsed.data.workspace_id ?? contextWorkspaceId ?? run?.workspaceId ?? null;
+  try {
+    const contextWorkspaceId = extractWorkspaceIdFromContext(parsed.data.context);
+    const run = await getRun(parsed.data.run_id);
+    const workspaceId =
+      parsed.data.workspace_id ?? contextWorkspaceId ?? run?.workspaceId ?? null;
 
-  const auth = await verifyBridgeRequest({
-    headers: req.headers,
-    body: req.body,
-    workspaceId,
-  });
+    const auth = await verifyBridgeRequest({
+      headers: req.headers,
+      body: req.body,
+      workspaceId,
+    });
 
-  if (!auth.ok) {
-    return res.status(401).json({ error: auth.error });
-  }
+    if (!auth.ok) {
+      return res.status(401).json({ error: auth.error });
+    }
 
-  const cwdHash = crypto
-    .createHash('sha256')
-    .update(parsed.data.cwd)
-    .digest('hex');
+    const cwdHash = crypto
+      .createHash('sha256')
+      .update(parsed.data.cwd)
+      .digest('hex');
 
-  const approval = await createApproval({
-    runId: parsed.data.run_id,
-    kind: 'COMMAND',
-    command: parsed.data.command,
-    cwdHash,
-  });
+    if (!run) {
+      await ensureRunExists({
+        runId: parsed.data.run_id,
+        workspaceId,
+        provider: 'unknown',
+      });
+    }
 
-  if (workspaceId) {
-    const workspace = await getWorkspaceById(workspaceId);
-    if (workspace) {
-      const device = await getDeviceById(workspace.deviceId);
-      if (device) {
-        await sendPushNotification(device, {
-          title: 'Approval Requested',
-          body: parsed.data.command,
-          data: {
-            approval_id: approval.id,
-            run_id: parsed.data.run_id,
-          },
-        });
+    const approval = await createApproval({
+      runId: parsed.data.run_id,
+      kind: 'COMMAND',
+      command: parsed.data.command,
+      cwdHash,
+    });
+
+    if (workspaceId) {
+      const workspace = await getWorkspaceById(workspaceId);
+      if (workspace) {
+        const device = await getDeviceById(workspace.deviceId);
+        if (device) {
+          await sendPushNotification(device, {
+            title: 'Approval Requested',
+            body: parsed.data.command,
+            data: {
+              approval_id: approval.id,
+              run_id: parsed.data.run_id,
+            },
+          });
+        }
       }
     }
-  }
 
-  return res.json({ approval_id: approval.id });
+    return res.json({ approval_id: approval.id });
+  } catch (error) {
+    console.error('Approval request failed', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ error: 'Internal server error', details: message });
+  }
 });
 
 router.get('/approval/:approvalId/wait', async (req, res) => {
-  const approvalId = req.params.approvalId;
-  const approval = await getApproval(approvalId);
-  if (!approval) {
-    return res.status(404).json({ error: 'Approval not found' });
+  try {
+    const approvalId = req.params.approvalId;
+    const approval = await getApproval(approvalId);
+    if (!approval) {
+      return res.status(404).json({ error: 'Approval not found' });
+    }
+
+    const run = await getRun(approval.runId);
+    const auth = await verifyBridgeRequest({
+      headers: req.headers,
+      body: {},
+      workspaceId: run?.workspaceId ?? null,
+    });
+
+    if (!auth.ok) {
+      return res.status(401).json({ error: auth.error });
+    }
+
+    if (approval.status !== 'PENDING') {
+      return res.json({ status: approval.status, note: approval.note ?? null });
+    }
+
+    const timeoutRaw = req.query.timeout;
+    const timeoutSec =
+      typeof timeoutRaw === 'string' ? Number.parseInt(timeoutRaw, 10) : 90;
+    const safeTimeoutSec =
+      Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 90;
+
+    const result = await waitForApprovalDecision(
+      approvalId,
+      safeTimeoutSec * 1000,
+    );
+
+    if (!result) {
+      const refreshed = await getApproval(approvalId);
+      if (refreshed && refreshed.status !== 'PENDING') {
+        return res.json({
+          status: refreshed.status,
+          note: refreshed.note ?? null,
+        });
+      }
+
+      return res.json({ status: 'PENDING' });
+    }
+
+    return res.json({ status: result.status, note: result.note ?? null });
+  } catch (error) {
+    console.error('Approval wait failed', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ error: 'Internal server error', details: message });
   }
-
-  const run = await getRun(approval.runId);
-  const auth = await verifyBridgeRequest({
-    headers: req.headers,
-    body: {},
-    workspaceId: run?.workspaceId ?? null,
-  });
-
-  if (!auth.ok) {
-    return res.status(401).json({ error: auth.error });
-  }
-
-  if (approval.status !== 'PENDING') {
-    return res.json({ status: approval.status, note: approval.note ?? null });
-  }
-
-  const timeoutRaw = req.query.timeout;
-  const timeoutSec =
-    typeof timeoutRaw === 'string' ? Number.parseInt(timeoutRaw, 10) : 90;
-  const safeTimeoutSec =
-    Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 90;
-
-  const result = await waitForApprovalDecision(
-    approvalId,
-    safeTimeoutSec * 1000,
-  );
-
-  if (!result) {
-    return res.json({ status: 'PENDING' });
-  }
-
-  return res.json({ status: result.status, note: result.note ?? null });
 });
 
 export default router;

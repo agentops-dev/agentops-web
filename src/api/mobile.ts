@@ -18,28 +18,34 @@ router.post('/approval/:approvalId/decision', async (req, res) => {
     });
   }
 
-  const approvalId = req.params.approvalId;
-  const normalizedDecision =
-    parsed.data.decision === 'APPROVED' || parsed.data.decision === 'APPROVE'
-      ? 'APPROVE'
-      : 'DENY';
+  try {
+    const approvalId = req.params.approvalId;
+    const normalizedDecision =
+      parsed.data.decision === 'APPROVED' || parsed.data.decision === 'APPROVE'
+        ? 'APPROVE'
+        : 'DENY';
 
-  const deviceIdHeader = req.headers['x-device-id'];
-  const decidedByDeviceId =
-    typeof deviceIdHeader === 'string' ? deviceIdHeader : undefined;
+    const deviceIdHeader = req.headers['x-device-id'];
+    const decidedByDeviceId =
+      typeof deviceIdHeader === 'string' ? deviceIdHeader : undefined;
 
-  const decision = await decideApproval({
-    approvalId,
-    decision: normalizedDecision,
-    note: parsed.data.note,
-    decidedByDeviceId,
-  });
+    const decision = await decideApproval({
+      approvalId,
+      decision: normalizedDecision,
+      note: parsed.data.note,
+      decidedByDeviceId,
+    });
 
-  if (!decision) {
-    return res.status(404).json({ error: 'Approval not found' });
+    if (!decision) {
+      return res.status(404).json({ error: 'Approval not found' });
+    }
+
+    return res.json({ status: decision.status, note: decision.note ?? null });
+  } catch (error) {
+    console.error('Mobile approval decision failed', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ error: 'Internal server error', details: message });
   }
-
-  return res.json({ status: decision.status, note: decision.note ?? null });
 });
 
 export default router;

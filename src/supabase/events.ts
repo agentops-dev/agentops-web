@@ -1,6 +1,5 @@
-import { v4 as uuidv4 } from 'uuid';
 import { Event } from '../types/models';
-import { memoryStore } from './store';
+import { requireSupabaseClient } from './client';
 
 export async function createEvent(params: {
   runId: string;
@@ -8,14 +7,28 @@ export async function createEvent(params: {
   createdAt: string;
   payload: Record<string, unknown>;
 }): Promise<Event> {
-  const event: Event = {
-    id: uuidv4(),
-    runId: params.runId,
-    type: params.type,
-    createdAt: params.createdAt,
-    payload: params.payload,
-  };
+  const client = requireSupabaseClient();
 
-  memoryStore.events.set(event.id, event);
-  return event;
+  const { data, error } = await client
+    .from('events')
+    .insert({
+      run_id: params.runId,
+      type: params.type,
+      created_at: params.createdAt,
+      payload: params.payload,
+    })
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Failed to create event: ${error?.message ?? 'unknown error'}`);
+  }
+
+  return {
+    id: data.id,
+    runId: data.run_id,
+    type: data.type,
+    createdAt: data.created_at,
+    payload: data.payload ?? {},
+  };
 }

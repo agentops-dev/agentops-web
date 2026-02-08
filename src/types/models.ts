@@ -25,7 +25,7 @@ export interface Run {
   id: string;
   provider: string;
   providerRunId?: string;
-  workspaceId: string;
+  workspaceId: string | null;
   status: RunStatus;
   startedAt?: string;
   endedAt?: string;
@@ -55,12 +55,4 @@ export interface Approval {
   requestedAt: string;
   decidedAt?: string;
   decidedByDeviceId?: string;
-}
-
-export interface PairTokenRecord {
-  token: string;
-  machineId: string;
-  workspaceFingerprint: string;
-  displayName: string;
-  expiresAt: number;
 }

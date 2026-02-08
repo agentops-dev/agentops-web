@@ -22,3 +22,14 @@ export function getSupabaseClient(): SupabaseClient | null {
 
   return cachedClient;
 }
+
+export function requireSupabaseClient(): SupabaseClient {
+  const client = getSupabaseClient();
+  if (!client) {
+    throw new Error(
+      'Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+    );
+  }
+
+  return client;
+}

@@ -9,7 +9,6 @@ import { landingPageHtml } from './landing';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -26,6 +25,13 @@ app.use('/pair', pairingRouter);
 app.use('/bridge', bridgeRouter);
 app.use('/mobile', mobileRouter);
 
-app.listen(PORT, () => {
-  console.log(`AgentOps Backend listening on port ${PORT}`);
-});
+const isVercelRuntime = Boolean(process.env.VERCEL);
+
+if (!isVercelRuntime) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`AgentOps Backend listening on port ${PORT}`);
+  });
+}
+
+export default app;

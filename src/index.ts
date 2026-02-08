@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import pairingRouter from './api/pairing';
 import bridgeRouter from './api/bridge';
 import mobileRouter from './api/mobile';
+import { landingPageHtml } from './landing';
 
 dotenv.config();
 
@@ -12,6 +13,10 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+app.get('/', (req, res) => {
+  res.type('html').send(landingPageHtml);
+});
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

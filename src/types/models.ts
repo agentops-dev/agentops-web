@@ -19,10 +19,46 @@ export interface Workspace {
   updatedAt: string;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Folder {
+  id: string;
+  projectId: string;
+  parentFolderId?: string;
+  name: string;
+  depth: number;
+  charter?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AgentStatus = 'RUNNING' | 'IDLE' | 'FAILED' | 'OFFLINE' | 'UNKNOWN';
+
+export interface Agent {
+  id: string;
+  provider: string;
+  externalAgentId?: string;
+  displayName?: string;
+  workspaceId?: string;
+  projectId?: string;
+  folderId?: string;
+  status: AgentStatus;
+  lastSeenAt: string;
+  createdAt: string;
+  updatedAt: string;
+  meta?: Record<string, unknown>;
+}
+
 export type RunStatus = 'RUNNING' | 'FINISHED' | 'FAILED' | 'STOPPED' | 'UNKNOWN';
 
 export interface Run {
   id: string;
+  agentId?: string;
   provider: string;
   providerRunId?: string;
   workspaceId: string;

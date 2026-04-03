@@ -35,6 +35,31 @@ export async function getRun(runId: string): Promise<Run | null> {
   return memoryStore.runs.get(runId) ?? null;
 }
 
+export async function linkRunToAgent(runId: string, agentId: string): Promise<Run | null> {
+  const run = memoryStore.runs.get(runId);
+  if (!run) {
+    return null;
+  }
+
+  const updated: Run = {
+    ...run,
+    agentId,
+  };
+  memoryStore.runs.set(runId, updated);
+  return updated;
+}
+
+export async function listRuns(): Promise<Run[]> {
+  return Array.from(memoryStore.runs.values()).sort((a, b) =>
+    (b.lastEventAt ?? '').localeCompare(a.lastEventAt ?? ''),
+  );
+}
+
+export async function getRunsByAgentId(agentId: string): Promise<Run[]> {
+  const runs = await listRuns();
+  return runs.filter((run) => run.agentId === agentId);
+}
+
 export async function upsertRunFromEvent(input: {
   runId: string;
   workspaceId: string;
@@ -57,6 +82,7 @@ export async function upsertRunFromEvent(input: {
 
   const updated: Run = {
     id: input.runId,
+    agentId: existing?.agentId,
     provider: input.provider,
     providerRunId: existing?.providerRunId,
     workspaceId: input.workspaceId,

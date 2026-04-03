@@ -19,3 +19,20 @@ export async function createEvent(params: {
   memoryStore.events.set(event.id, event);
   return event;
 }
+
+export async function listEventsByRunIds(runIds: string[]): Promise<Event[]> {
+  if (runIds.length === 0) {
+    return [];
+  }
+
+  const runIdSet = new Set(runIds);
+  return Array.from(memoryStore.events.values())
+    .filter((event) => runIdSet.has(event.runId))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export async function listEvents(limit = 200): Promise<Event[]> {
+  return Array.from(memoryStore.events.values())
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, limit);
+}

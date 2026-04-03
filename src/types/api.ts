@@ -39,3 +39,32 @@ export interface ApprovalRequestPayload {
 }
 
 export type ApprovalDecisionInput = 'APPROVE' | 'DENY';
+
+export interface AgentHeartbeatRequest {
+  provider: string;
+  status: string;
+  heartbeat_at: string;
+  external_agent_id?: string;
+  display_name?: string;
+  workspace_id?: string;
+  run_id?: string;
+  project_id?: string;
+  folder_id?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface CreateProjectRequest {
+  name: string;
+}
+
+export interface CreateFolderRequest {
+  project_id: string;
+  name: string;
+  parent_folder_id?: string;
+  charter?: string;
+}
+
+export interface MoveAgentRequest {
+  project_id: string;
+  folder_id: string;
+}
